@@ -86,6 +86,8 @@ The setup wizard interviews you about your business, creates your Airtable table
 | `/ad-polish` | Strip AI patterns from ad copy -- makes it sound human-written |
 | `/ad-launch` | Launch Meta campaigns (Safe Mode default) |
 | `/ad-monitor` | Track performance, kill/watch/scale decisions |
+| `/ad-report` | Generate competitor intelligence reports (weekly/monthly) |
+| `/ad-autoresearch` | Daily auto-analysis -- spots competitor moves, finds gaps, suggests improvements |
 
 ---
 
