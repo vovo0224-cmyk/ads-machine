@@ -82,7 +82,7 @@ The setup wizard interviews you about your business, creates your Airtable table
 | `/ad-ideator` | Generate 5 variations from 1 winner |
 | `/ad-scripter` | Write video scripts and ad copy using proven hooks and Long-Runner frameworks |
 | `/ad-brief` | Create filming cards and shot lists |
-| `/ad-creative` | Generate ad images and visual assets (works with Gemini, DALL-E, or Flux) |
+| `/banana-split` | AI image generation powered by Nano Banana models (ad creatives, social images, thumbnails, anything) |
 | `/ad-polish` | Strip AI patterns from ad copy -- makes it sound human-written |
 | `/ad-launch` | Launch Meta campaigns (Safe Mode default) |
 | `/ad-monitor` | Track performance, kill/watch/scale decisions |
