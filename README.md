@@ -61,16 +61,27 @@ LOOP       Winners feed back into the swipe file. The system learns.
 
 ## Quick Start
 
+### One-line install (Mac/Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/seancrowe01/ads-machine/main/install.sh | bash
+```
+
+### One-line install (Windows PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/seancrowe01/ads-machine/main/install.ps1 | iex
+```
+
+### Manual install
+
 ```bash
 git clone https://github.com/seancrowe01/ads-machine.git
 cd ads-machine
 cp .env.example .env
-# Fill in your API keys in .env
-# Open Claude Code and run:
-/ads-setup
 ```
 
-The setup wizard interviews you about your business, creates your Airtable tables, configures your MCP servers, and gets everything wired up.
+Then add your API keys to `.env` and run `/ads-setup` in Claude Code. The setup wizard interviews you about your business, creates your Airtable tables, auto-discovers competitors in your niche, and gets everything wired up.
 
 ---
 
