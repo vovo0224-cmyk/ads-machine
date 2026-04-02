@@ -33,6 +33,10 @@ ads-machine-blueprint.png
 # n8n test files (contains env-specific config)
 n8n/test-poller.js
 
+# Blueprint build scripts (contain local paths)
+docs/render-blueprint.py
+docs/render-blueprint.js
+
 # Ad creative outputs
 creatives/
 
