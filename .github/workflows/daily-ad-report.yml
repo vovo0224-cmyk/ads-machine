@@ -1,23 +1,21 @@
-name: 팟노블 Daily Ad Report                                                               
-                                                                                             
-  on:                                                                                        
-    schedule:                                                                                
-      - cron: '0 23 * * *'                                                                   
+name: Daily Ad Report                                                                      
+  on:             
+    schedule:
+      - cron: '0 23 * * *'
     workflow_dispatch:                                                                       
-                                                                                             
-  jobs:                                                                                      
+  jobs:
     run-pipeline:                                                                            
-      runs-on: ubuntu-latest                                                                 
-      timeout-minutes: 30                                                                    
-      steps:                                                                                 
-        - uses: actions/checkout@v4                                                          
-        - uses: actions/setup-python@v5
-          with:                                                                              
-            python-version: '3.11'                                                         
-        - name: Run Daily Pipeline
+      runs-on: ubuntu-latest
+      timeout-minutes: 30
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5                                                      
+          with:
+            python-version: '3.11'                                                           
+        - name: Run
           env:
             AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
             APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}                                          
             GMAIL_USER: ${{ secrets.GMAIL_USER }}
             GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}                            
-          run: python3 daily_pipeline.py              
+          run: python3 daily_pipeline.py
