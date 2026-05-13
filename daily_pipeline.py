@@ -20,6 +20,22 @@ TODAY        = date.today().isoformat()
 
 FORMAT_MAP = {"VIDEO": "Video", "IMAGE": "Image", "CAROUSEL": "Carousel", "DCO": "DCO"}
 
+COUNTRY_MAP = {
+    "PLING": "🇰🇷 한국",
+    "달보이스": "🇰🇷 한국",
+    "오디오코믹스": "🇰🇷 한국",
+    "윌라 스토리": "🇰🇷 한국",
+    "밀리의서재": "🇰🇷 한국",
+    "audiobook.jp": "🇯🇵 일본",
+    "朗読少女": "🇯🇵 일본",
+    "Readmoo": "🇹🇼 대만",
+    "Dreame": "🌏 글로벌",
+    "GoodNovel": "🌏 글로벌",
+    "Alex Hormozi": "🌏 글로벌 (프레임워크)",
+    "Pocket FM": "🌏 글로벌",
+    "My Vampire System By Pocket FM": "🌏 글로벌",
+}
+
 def airtable_get(table, params=""):
     url = f"https://api.airtable.com/v0/{BASE_ID}/{table}?{params}"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {AIRTABLE_KEY}"})
@@ -187,31 +203,64 @@ print("Step 5: Gmail 리포트 발송 중...")
 
 total_new = sum(v["new"] for v in stats.values())
 
-rows = "".join(f"<tr><td>{n}</td><td>{v['total']}</td><td><b>{v['new']}</b></td></tr>" for n, v in stats.items())
-lr_rows = "".join(f"<tr><td>{c}</td><td>{d}일</td><td><a href='{u}'>{h[:80]}...</a></td></tr>" for c,h,u,d in long_runners[:10] if h) or "<tr><td colspan='3'>없음</td></tr>"
-top5 = "".join(f"<li><b>{c}</b> — <a href='{u}'>{h[:100]}</a></li>" for c,h,u in new_ads[:5]) or "<li>신규 광고 없음</li>"
 err_section = f"<p style='color:red'>⚠️ 오류: {', '.join(errors)}</p>" if errors else ""
 
+# 국가별 섹션 분리
+from collections import defaultdict
+stats_by_country = defaultdict(dict)
+for name, v in stats.items():
+    country = COUNTRY_MAP.get(name, "🌏 글로벌")
+    stats_by_country[country][name] = v
+
+country_sections = ""
+country_order = ["🇰🇷 한국", "🇯🇵 일본", "🇹🇼 대만", "🌏 글로벌", "🌏 글로벌 (프레임워크)"]
+for country in country_order:
+    if country not in stats_by_country:
+        continue
+    rows = "".join(f"<tr><td>{n}</td><td>{v['total']}</td><td><b>{v['new']}</b></td></tr>"
+                   for n, v in stats_by_country[country].items())
+    country_total = sum(v['new'] for v in stats_by_country[country].values())
+    country_sections += f"""
+<h3>{country}</h3>
+<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse; width:100%; margin-bottom:16px;">
+  <tr style="background:#f0f0f0"><th>경쟁사</th><th>총 광고</th><th>신규 추가</th></tr>
+  {rows}
+  <tr style="background:#e8f5e9"><td><b>소계</b></td><td></td><td><b>{country_total}개</b></td></tr>
+</table>
+"""
+
+lr_rows = "".join(
+    f"<tr><td>{COUNTRY_MAP.get(c,'?')}</td><td>{c}</td><td>{d}일</td><td><a href='{u}'>{h[:80]}...</a></td></tr>"
+    for c,h,u,d in long_runners[:10] if h
+) or "<tr><td colspan='4'>없음</td></tr>"
+
+top5 = "".join(
+    f"<li><b>{COUNTRY_MAP.get(c,'?')} {c}</b> — <a href='{u}'>{h[:100]}</a></li>"
+    for c,h,u in new_ads[:5]
+) or "<li>신규 광고 없음</li>"
+
 html = f"""
-<html><body style="font-family: sans-serif; max-width: 700px; margin: auto; padding: 20px;">
+<html><body style="font-family: sans-serif; max-width: 720px; margin: auto; padding: 20px;">
 <h2 style="color:#1a1a2e; border-bottom: 2px solid #e94560; padding-bottom: 8px;">
   📊 팟노블 광고 인텔리전스 리포트 — {TODAY}
 </h2>
+<p style="background:#f5f5f5; padding:10px; border-radius:6px;">
+  총 신규 광고: <b>{total_new}개</b> &nbsp;|&nbsp;
+  Long-Runner: <b>{len(long_runners)}개</b> &nbsp;|&nbsp;
+  추적 경쟁사: <b>{len(stats)}개</b>
+</p>
 {err_section}
-<h3>📥 오늘 수집 요약</h3>
-<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse; width:100%">
-  <tr style="background:#f0f0f0"><th>경쟁사</th><th>총 광고</th><th>신규 추가</th></tr>
-  {rows}
-  <tr style="background:#e8f5e9"><td><b>합계</b></td><td></td><td><b>{total_new}개</b></td></tr>
-</table>
 
-<h3>🏆 Long-Runner 광고 (60일+ 검증)</h3>
+<h2 style="color:#1a1a2e; margin-top:24px;">📥 국가별 수집 현황</h2>
+{country_sections}
+
+<h2 style="color:#1a1a2e; margin-top:24px;">🏆 Long-Runner 광고 (60일+ 검증)</h2>
 <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse; width:100%">
-  <tr style="background:#f0f0f0"><th>경쟁사</th><th>기간</th><th>훅 텍스트</th></tr>
+  <tr style="background:#f0f0f0"><th>국가</th><th>경쟁사</th><th>기간</th><th>훅 텍스트</th></tr>
   {lr_rows}
 </table>
 
-<h3>🆕 오늘 신규 발견 광고 Top 5</h3>
+<h2 style="color:#1a1a2e; margin-top:24px;">🆕 오늘 신규 발견 광고 Top 5</h2>
 <ol>{top5}</ol>
 
 <hr>
