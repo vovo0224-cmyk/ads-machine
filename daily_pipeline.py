@@ -3,7 +3,7 @@
 팟노블 Daily Ad Pipeline
 경쟁사 광고 수집 → Airtable 저장 → Gmail 리포트 발송
 """
-import os, json, time, smtplib, urllib.request, urllib.error
+import os, json, time, smtplib, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -60,25 +60,41 @@ def airtable_patch(table, records):
     with urllib.request.urlopen(req) as r:
         return json.loads(r.read())
 
-def apify_run(page_id):
+def _apify_start_run(page_id):
     url = f"https://api.apify.com/v2/acts/apify~facebook-ads-scraper/runs?token={APIFY_TOKEN}"
-    payload = json.dumps({"startUrls": [{"url": f"https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=ALL&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id={page_id}"}], "resultsLimit": 50}).encode()
+    lib_url = (
+        f"https://www.facebook.com/ads/library/?active_status=all&ad_type=all"
+        f"&country=ALL&media_type=all&search_type=page"
+        f"&sort_data[direction]=desc&sort_data[mode]=total_impressions"
+        f"&view_all_page_id={page_id}"
+    )
+    payload = json.dumps({"startUrls": [{"url": lib_url}], "resultsLimit": 50}).encode()
     req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req) as r:
-        run_id = json.loads(r.read())["data"]["id"]
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())["data"]["id"]
 
-    for _ in range(40):
+def _apify_collect(run_id):
+    deadline = time.time() + 300
+    while time.time() < deadline:
         time.sleep(10)
-        with urllib.request.urlopen(f"https://api.apify.com/v2/actor-runs/{run_id}?token={APIFY_TOKEN}") as r:
-            status = json.loads(r.read())["data"]["status"]
+        with urllib.request.urlopen(
+            f"https://api.apify.com/v2/actor-runs/{run_id}?token={APIFY_TOKEN}", timeout=15
+        ) as r:
+            data = json.loads(r.read())["data"]
+        status = data["status"]
         if status == "SUCCEEDED":
-            break
-        if status in ("FAILED", "ABORTED"):
-            return []
+            ds = data["defaultDatasetId"]
+            with urllib.request.urlopen(
+                f"https://api.apify.com/v2/datasets/{ds}/items?token={APIFY_TOKEN}&limit=50", timeout=30
+            ) as r:
+                return json.loads(r.read())
+        if status in ("FAILED", "ABORTED", "TIMED-OUT"):
+            raise RuntimeError(f"Run {run_id} ended with status {status}")
+    raise TimeoutError(f"Run {run_id} timed out after 5 minutes")
 
-    ds = json.loads(urllib.request.urlopen(f"https://api.apify.com/v2/actor-runs/{run_id}?token={APIFY_TOKEN}").read())["data"]["defaultDatasetId"]
-    with urllib.request.urlopen(f"https://api.apify.com/v2/datasets/{ds}/items?token={APIFY_TOKEN}&limit=50") as r:
-        return json.loads(r.read())
+def apify_run(page_id):
+    run_id = _apify_start_run(page_id)
+    return _apify_collect(run_id)
 
 def parse_date(val):
     if not val: return None
@@ -178,7 +194,6 @@ for name, page_id in competitors:
             try:
                 r = airtable_post(SWIPE_TABLE, new_records[i:i+10])
                 inserted += len(r.get("records", []))
-                # Track new ads for report
                 for rec in new_records[i:i+10]:
                     new_ads.append((name, rec["fields"].get("Hook Copy",""), rec["fields"].get("Ad Library URL","")))
             except Exception as e:
@@ -188,24 +203,103 @@ for name, page_id in competitors:
         stats[name] = {"total": len(items), "new": inserted}
         print(f"  {name}: {len(items)}개 수집, {inserted}개 신규 추가")
     except Exception as e:
-        errors.append(f"{name} 스크래이핑 실패: {e}")
-        stats[name] = {"total": 0, "new": 0}
-        print(f"  {name}: 오류 — {e}")
+        print(f"  {name}: 첫 번째 실패({e}), 재시도 중...")
+        try:
+            run_id = _apify_start_run(page_id)
+            items = _apify_collect(run_id)
+            new_records = []
+            for item in items:
+                aid = str(item.get("adArchiveId") or item.get("adArchiveID") or "")
+                if not aid or aid in existing: continue
+                snap = item.get("snapshot") or {}
+                start = parse_date(item.get("startDateFormatted") or item.get("startDate"))
+                end   = parse_date(item.get("endDateFormatted") or item.get("endDate"))
+                days  = calc_days(start, end) if start else None
+                body  = (snap.get("body") or {}).get("text", "") or ""
+                fmt   = FORMAT_MAP.get((snap.get("displayFormat") or "IMAGE").upper(), "Image")
+                videos = snap.get("videos") or []
+                images = snap.get("images") or []
+                cards  = snap.get("cards") or []
+                video_url = (videos[0].get("videoHdUrl") or videos[0].get("videoSdUrl") or "") if videos else ""
+                image_url = (images[0].get("originalImageUrl") or "") if images else ((cards[0].get("originalImageUrl") or "") if cards else "")
+                fields = {
+                    "Ad Archive ID": aid, "Competitor": name, "Page Name": item.get("pageName", name),
+                    "Ad Library URL": f"https://www.facebook.com/ads/library/?id={aid}",
+                    "Status": "Active", "Ad Active Status": "Active" if item.get("isActive") else "Inactive",
+                    "Longevity Tier": longevity_tier(days), "Display Format": fmt,
+                    "Is Analyzed": False, "Scrape Date": TODAY,
+                }
+                if start: fields["Start Date"] = start
+                if end:   fields["End Date"] = end
+                if days is not None: fields["Days Active"] = days
+                if body:  fields["Body Text"] = body[:10000]; fields["Hook Copy"] = body.split("\n")[0][:200]; fields["Word Count"] = len(body.split())
+                title = snap.get("title", "")
+                if title and "{{" not in title: fields["Title"] = title[:255]
+                if snap.get("ctaType"): fields["CTA Type"] = snap["ctaType"]
+                if snap.get("linkUrl"): fields["Link URL"] = snap["linkUrl"][:255]
+                if video_url: fields["Video URL"] = video_url[:255]
+                if image_url: fields["Image URL"] = image_url[:255]
+                new_records.append({"fields": fields})
+                existing[aid] = None
 
-# === STEP 4: Long-Runner 목록 ===
-print("Step 4: Long-Runner 광고 수집 중...")
-lr_data = airtable_get(SWIPE_TABLE, "filterByFormula={Longevity+Tier}='Long-Runner'&fields[]=Hook+Copy&fields[]=Ad+Library+URL&fields[]=Competitor&fields[]=Days+Active&pageSize=50")
+            inserted = 0
+            for i in range(0, len(new_records), 10):
+                try:
+                    r = airtable_post(SWIPE_TABLE, new_records[i:i+10])
+                    inserted += len(r.get("records", []))
+                    for rec in new_records[i:i+10]:
+                        new_ads.append((name, rec["fields"].get("Hook Copy",""), rec["fields"].get("Ad Library URL","")))
+                except Exception as ie:
+                    errors.append(f"{name} 삽입 오류(재시도): {ie}")
+                time.sleep(0.3)
+            stats[name] = {"total": len(items), "new": inserted}
+            print(f"  {name} 재시도 성공: {inserted}개 신규")
+        except Exception as e2:
+            errors.append(f"{name} 스크래이핑 실패(2회): {e2}")
+            stats[name] = {"total": 0, "new": 0}
+            print(f"  {name}: 재시도도 실패 — {e2}")
+
+# === STEP 4: 기존 광고 Longevity Tier 업데이트 ===
+print("Step 4: 기존 활성 광고 Longevity Tier 업데이트 중...")
+tier_updates = []
+tier_offset = None
+while True:
+    tier_qs = urllib.parse.urlencode({"filterByFormula": "AND({Status}='Active',{Start Date}!='')"}) + "&fields[]=Start Date&fields[]=End Date&fields[]=Days Active&fields[]=Longevity Tier&pageSize=100" + (f"&offset={tier_offset}" if tier_offset else "")
+    tier_data = airtable_get(SWIPE_TABLE, tier_qs)
+    for rec in tier_data.get("records", []):
+        f = rec["fields"]
+        start = f.get("Start Date", "")
+        end   = f.get("End Date", "")
+        if not start: continue
+        new_days = calc_days(start, end or None)
+        new_tier = longevity_tier(new_days)
+        if new_tier != f.get("Longevity Tier") or new_days != f.get("Days Active"):
+            tier_updates.append({"id": rec["id"], "fields": {"Days Active": new_days, "Longevity Tier": new_tier}})
+    tier_offset = tier_data.get("offset")
+    if not tier_offset: break
+
+if tier_updates:
+    for i in range(0, len(tier_updates), 10):
+        airtable_patch(SWIPE_TABLE, tier_updates[i:i+10])
+        time.sleep(0.3)
+    print(f"  {len(tier_updates)}개 티어 업데이트 완료")
+else:
+    print("  업데이트 필요 없음")
+
+# === STEP 5: Long-Runner 목록 ===
+print("Step 5: Long-Runner 광고 수집 중...")
+lr_qs = urllib.parse.urlencode({"filterByFormula": "{Longevity Tier}='Long-Runner'"}) + "&fields[]=Hook Copy&fields[]=Ad Library URL&fields[]=Competitor&fields[]=Days Active&pageSize=50"
+lr_data = airtable_get(SWIPE_TABLE, lr_qs)
 long_runners = [(r["fields"].get("Competitor",""), r["fields"].get("Hook Copy",""), r["fields"].get("Ad Library URL",""), r["fields"].get("Days Active",0)) for r in lr_data.get("records", [])]
 print(f"  Long-Runner {len(long_runners)}개")
 
-# === STEP 5: Gmail 리포트 발송 ===
-print("Step 5: Gmail 리포트 발송 중...")
+# === STEP 6: Gmail 리포트 발송 ===
+print("Step 6: Gmail 리포트 발송 중...")
 
 total_new = sum(v["new"] for v in stats.values())
 
 err_section = f"<p style='color:red'>⚠️ 오류: {', '.join(errors)}</p>" if errors else ""
 
-# 국가별 섹션 분리
 from collections import defaultdict
 stats_by_country = defaultdict(dict)
 for name, v in stats.items():

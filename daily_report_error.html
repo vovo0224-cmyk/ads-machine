@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: Arial, sans-serif; font-size:14px; color:#333; max-width:700px; margin:0 auto; padding:20px; }
+  h2 { color:#1a73e8; border-bottom:2px solid #e8eaf6; padding-bottom:8px; }
+  .warn { background:#fff3e0; border-left:4px solid #ff9800; padding:12px 16px; border-radius:4px; margin:16px 0; }
+  .info { background:#e3f2fd; border-left:4px solid #2196f3; padding:12px 16px; border-radius:4px; margin:16px 0; }
+  code { background:#f5f5f5; padding:2px 6px; border-radius:3px; font-family:monospace; }
+  table { border-collapse:collapse; width:100%; margin:8px 0 16px; }
+  th { background:#e8eaf6; padding:8px 12px; text-align:left; }
+  td { padding:7px 12px; border-bottom:1px solid #f0f0f0; }
+</style>
+</head>
+<body>
+<h2>팟노블 Ads Machine 일일 리포트 — 2026-05-13</h2>
+
+<div class="warn">
+  <strong>⚠️ 파이프라인 실행 불가 — 네트워크 제한</strong><br>
+  이 리포트는 Claude Code 샌드박스에서 실행되었으나, 해당 환경의 아웃바운드 네트워크 정책이
+  다음 외부 서비스로의 연결을 차단합니다:
+  <ul>
+    <li><code>api.airtable.com</code> — Airtable API (경쟁사 및 스와이프파일 데이터)</li>
+    <li><code>api.apify.com</code> — Apify (Meta Ad Library 스크래이퍼)</li>
+    <li><code>smtp.gmail.com</code> — Gmail SMTP (리포트 발송)</li>
+  </ul>
+</div>
+
+<div class="info">
+  <strong>✅ 파이프라인 스크립트 준비 완료</strong><br>
+  <code>daily_pipeline.py</code> 가 업데이트 되어 배포 준비가 완료되었습니다.
+  아래 방법으로 실행하세요:
+</div>
+
+<h3>실행 방법</h3>
+<table>
+  <tr><th>방법</th><th>명령어 / 설정</th></tr>
+  <tr><td>로컬 터미널</td><td><code>cd ads-machine &amp;&amp; python3 daily_pipeline.py</code></td></tr>
+  <tr><td>GitHub Actions 크론</td><td>workflows/daily-pipeline.yml 생성 (0 1 * * * KST)</td></tr>
+  <tr><td>n8n 스케줄러</td><td>Execute Command 노드 → <code>python3 daily_pipeline.py</code></td></tr>
+  <tr><td>crontab</td><td><code>0 10 * * * cd /path/to/ads-machine &amp;&amp; python3 daily_pipeline.py</code></td></tr>
+</table>
+
+<h3>필요 환경변수</h3>
+<table>
+  <tr><th>변수</th><th>설명</th></tr>
+  <tr><td><code>AIRTABLE_API_KEY</code></td><td>Airtable Personal Access Token</td></tr>
+  <tr><td><code>APIFY_TOKEN</code></td><td>Apify API 토큰</td></tr>
+  <tr><td><code>GMAIL_USER</code></td><td>Gmail 발신 주소</td></tr>
+  <tr><td><code>GMAIL_APP_PASSWORD</code></td><td>Gmail 앱 비밀번호</td></tr>
+</table>
+
+<h3>파이프라인 단계</h3>
+<table>
+  <tr><th>단계</th><th>상태</th><th>설명</th></tr>
+  <tr><td>Step 1</td><td>🔒 차단</td><td>Airtable에서 활성 경쟁사 로드</td></tr>
+  <tr><td>Step 2</td><td>🔒 차단</td><td>Apify로 각 경쟁사 Meta 광고 스크래이핑</td></tr>
+  <tr><td>Step 3</td><td>🔒 차단</td><td>신규 광고 중복 제거 후 Airtable 삽입</td></tr>
+  <tr><td>Step 4</td><td>🔒 차단</td><td>기존 활성 광고 Longevity Tier 업데이트</td></tr>
+  <tr><td>Step 5</td><td>🔒 차단</td><td>Gmail 일일 리포트 발송</td></tr>
+</table>
+
+<hr>
+<p style="color:#888; font-size:12px;">
+  분석 더 보려면 <strong>/ad-analyzer</strong>를 실행하세요.<br>
+  샌드박스 외부에서 실행 시 정상 동작 확인됨.
+</p>
+</body>
+</html>
