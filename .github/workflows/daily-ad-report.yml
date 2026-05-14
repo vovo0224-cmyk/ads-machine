@@ -3,6 +3,9 @@ on:
   schedule:
     - cron: '0 23 * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['run-now.txt']
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
@@ -12,10 +15,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Run
+      - name: Install dependencies
+        run: pip install requests 2>/dev/null || true
+      - name: Run pipeline
         env:
           AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-        run: python3 daily_pipeline.py
+        run: python3 daily-pipeline.py
