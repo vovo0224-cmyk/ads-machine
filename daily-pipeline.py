@@ -38,7 +38,14 @@ def airtable_get(table_id, params=None):
         p = dict(params or {})
         if offset:
             p["offset"] = offset
-        qs = "&".join(f"{k}={quote(str(v))}" for k, v in p.items()) if p else ""
+        parts = []
+        for k, v in p.items():
+            if isinstance(v, list):
+                for item in v:
+                    parts.append(f"{quote(k)}={quote(str(item))}")
+            else:
+                parts.append(f"{quote(k)}={quote(str(v))}")
+        qs = "&".join(parts)
         url = f"{base_url}?{qs}" if qs else base_url
         req = Request(url, headers={"Authorization": f"Bearer {AIRTABLE_API_KEY}"})
         with urlopen(req, timeout=20) as r:
