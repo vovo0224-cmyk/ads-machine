@@ -105,9 +105,16 @@ def apify_run_and_wait(page_id, max_wait=300):
         "resultsLimit": 50,
     }).encode()
     req = Request(start_url, data=body, method="POST",
-                  headers={"Content-Type": "application/json"})
-    with urlopen(req, timeout=30) as r:
-        run = json.loads(r.read())
+                  headers={
+                      "Content-Type": "application/json",
+                      "Authorization": f"Bearer {APIFY_TOKEN}",
+                  })
+    try:
+        with urlopen(req, timeout=30) as r:
+            run = json.loads(r.read())
+    except HTTPError as e:
+        body_bytes = e.read()
+        raise RuntimeError(f"Apify start failed HTTP {e.code}: {body_bytes.decode(errors='replace')[:300]}")
     run_id = run["data"]["id"]
     print(f"    Apify run {run_id} started …")
 
@@ -258,16 +265,26 @@ def step3_insert_new_ads(scrape_results):
             is_active = bool(ad.get("isActive", False))
             status    = "Active" if is_active else "Killed"
 
+            hook_copy = (body_text.split("\n")[0][:200]) if body_text else ""
+            archive_url = f"https://www.facebook.com/ads/library/?id={archive_id}"
+            page_name = ad.get("pageName", comp_name)
+            word_count = len(body_text.split()) if body_text else 0
             fields = {
-                "Ad Archive ID":  archive_id,
-                "Competitor":     comp_name,
-                "Status":         status,
-                "Is Active":      is_active,
-                "Start Date":     start_str[:10] if start_str else None,
-                "Days Active":    d_active,
-                "Longevity Tier": tier,
-                "Display Format": display,
-                "Body Copy":      body_text[:5000] if body_text else "",
+                "Ad Archive ID":    archive_id,
+                "Competitor":       comp_name,
+                "Page Name":        page_name,
+                "Ad Library URL":   archive_url,
+                "Status":           status,
+                "Ad Active Status": "Active" if is_active else "Inactive",
+                "Start Date":       start_str[:10] if start_str else None,
+                "Days Active":      d_active,
+                "Longevity Tier":   tier,
+                "Display Format":   display,
+                "Body Text":        body_text[:5000] if body_text else "",
+                "Hook Copy":        hook_copy,
+                "Word Count":       word_count,
+                "Is Analyzed":      False,
+                "Scrape Date":      TODAY_ISO,
             }
             if end_str:
                 fields["End Date"] = end_str[:10]
@@ -326,7 +343,7 @@ def step5_send_report(competitors, scrape_errors, new_count, new_by_comp, new_ad
 
     try:
         all_records = airtable_get(SWIPE_TABLE, {
-            "fields[]": ["Longevity Tier", "Body Copy", "Ad Archive ID", "Competitor", "Start Date"],
+            "fields[]": ["Longevity Tier", "Body Text", "Hook Copy", "Ad Archive ID", "Competitor", "Start Date"],
         })
     except Exception as e:
         all_records = []
@@ -351,7 +368,7 @@ def step5_send_report(competitors, scrape_errors, new_count, new_by_comp, new_ad
     lr_rows = ""
     for ad in long_runners[:20]:
         archive_id = ad.get("Ad Archive ID", "")
-        hook = (ad.get("Body Copy", "") or "")[:120].replace("<","&lt;").replace(">","&gt;")
+        hook = (ad.get("Hook Copy", "") or ad.get("Body Text", "") or "")[:120].replace("<","&lt;").replace(">","&gt;")
         comp = ad.get("Competitor", "")
         lib_url = f"https://www.facebook.com/ads/library/?id={archive_id}" if archive_id else "#"
         lr_rows += (
@@ -366,7 +383,7 @@ def step5_send_report(competitors, scrape_errors, new_count, new_by_comp, new_ad
 
     new5_rows = ""
     for ad in new_ads_list[:5]:
-        hook = (ad.get("Body Copy", "") or "")[:150].replace("<","&lt;").replace(">","&gt;")
+        hook = (ad.get("Hook Copy", "") or ad.get("Body Text", "") or "")[:150].replace("<","&lt;").replace(">","&gt;")
         comp = ad.get("Competitor", "")
         tier = ad.get("Longevity Tier", "")
         new5_rows += (
@@ -463,6 +480,28 @@ def step5_send_report(competitors, scrape_errors, new_count, new_by_comp, new_ad
     print(f"  ✓ 이메일 발송 완료 → {REPORT_TO}")
 
 
+# ─── Apify token pre-flight ───────────────────────────────────────────────────
+def check_apify_token():
+    req = Request(
+        f"https://api.apify.com/v2/users/me?token={APIFY_TOKEN}",
+        headers={"Authorization": f"Bearer {APIFY_TOKEN}"},
+    )
+    try:
+        with urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+        username = data.get("data", {}).get("username", "?")
+        plan = data.get("data", {}).get("plan", {}).get("id", "?")
+        print(f"  ✓ Apify token valid — user: {username}, plan: {plan}")
+        return True
+    except HTTPError as e:
+        body = e.read().decode(errors="replace")[:300]
+        print(f"  ✗ Apify token check failed HTTP {e.code}: {body}")
+        return False
+    except Exception as e:
+        print(f"  ✗ Apify token check error: {e}")
+        return False
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
     print("=" * 60)
@@ -485,6 +524,10 @@ def main():
 
     scrape_results = {}
     if competitors:
+        print("\n[STEP 1.5] Validating Apify token …")
+        token_ok = check_apify_token()
+        if not token_ok:
+            scrape_errors.append("Apify 토큰 검증 실패 — 토큰 만료 또는 플랜 제한 확인 필요")
         try:
             scrape_results, step2_errors = step2_scrape(competitors)
             scrape_errors.extend(step2_errors)
